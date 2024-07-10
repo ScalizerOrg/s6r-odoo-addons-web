@@ -1,0 +1,21 @@
+.o_field_related {
+  animation: blink 2s infinite;
+  font-style: italic;
+}
+
+.o_field_compute {
+  animation: blink 2s infinite;
+  font-style: italic;
+}
+
+@keyframes blink {
+  0% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.8;
+  }
+}
