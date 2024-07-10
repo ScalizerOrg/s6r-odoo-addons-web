@@ -1,1 +1,1 @@
-# s6r-odoo-addons-web
+# Scalizer Odoo Addons Web
