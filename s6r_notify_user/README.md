@@ -11,12 +11,19 @@ This module add a function to easily notify backend users
 the method _notify_user can be call from every model.
 
 Parameters are :
+
 notification_type : 'success' by default. Other values available : 'info', 'warning', 'danger'
+
 message : the message to display
+
 title (optional): the title of the notification
+
 reload (optional): boolean to reload the page after the notification
+
 soft_reload (optional): boolean to refresh record values after the notification
+
 sticky (optional): boolean to set a sticky notification
+
 next_action (optional): dictionary with next action to do after the notification
 
 ```python
