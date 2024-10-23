@@ -5,7 +5,7 @@ from odoo import models, api, _
 
 
 def notify_user(notification_type='success', message='', title='',
-                reload=False, soft_reload=False, sticky=False, next_action=None):
+                reload=False, soft_reload=False, sticky=False, next_action=None, **kwargs):
     if not message:
         message = _('Success!')
     else:
@@ -32,6 +32,8 @@ def notify_user(notification_type='success', message='', title='',
         res['params']['next'] = {'type': 'ir.actions.client', 'tag': 'reload'}
     if soft_reload:
         res['params']['next'] = {'type': 'ir.actions.client', 'tag': 'soft_reload'}
+    if kwargs.get('window_close'):
+        res['params']['next'] = {'type': 'ir.actions.act_window_close'}
     elif next_action:
         res['params']['next'] = next_action
     return res
@@ -42,6 +44,6 @@ class Model(models.AbstractModel):
 
     @api.model
     def _notify_user(self, notification_type='success',
-                     message='', title='', reload=False, soft_reload=False, sticky=False, next_action=None):
-        action = notify_user(notification_type, message, title, reload, soft_reload, sticky, next_action)
+                     message='', title='', reload=False, soft_reload=False, sticky=False, next_action=None, **kwargs):
+        action = notify_user(notification_type, message, title, reload, soft_reload, sticky, next_action, **kwargs)
         return action

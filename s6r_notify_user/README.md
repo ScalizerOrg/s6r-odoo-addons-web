@@ -26,6 +26,8 @@ sticky (optional): boolean to set a sticky notification
 
 next_action (optional): dictionary with next action to do after the notification
 
+window_close (optional): boolean to close the window after the notification
+
 ```python
 
 def do_something(self):
