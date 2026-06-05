@@ -7,6 +7,19 @@ import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { useService } from "@web/core/utils/hooks";
 import { FormViewDialog } from "@web/views/view_dialogs/form_view_dialog";
 import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
+import { patch } from "@web/core/utils/patch";
+import { ListController } from "@web/views/list/list_controller";
+
+ListController.props.activeActions = { type: Object, optional: true };
+
+patch(ListController.prototype, {
+  setup() {
+    super.setup();
+    if (this.props.activeActions) {
+      this.activeActions = { ...this.activeActions, ...this.props.activeActions };
+    }
+  },
+});
 
 export class GroupedX2ManyField extends Component {
   setup() {
@@ -88,6 +101,11 @@ export class GroupedX2ManyField extends Component {
       groupBy: this.groupBy,
       allowSelectors: false,
       selectRecord: (resId) => this.openRecordDialog(resId),
+      activeActions: {
+        type: "many2many",
+        unlink: true,
+        onDelete: (record) => this.onRemoveRecord(record),
+      },
     };
   }
 
@@ -99,6 +117,13 @@ export class GroupedX2ManyField extends Component {
         this.state.viewKey++;
       },
     });
+  }
+
+  async onRemoveRecord(record) {
+    const m2mList = this.props.record.data[this.props.name];
+    await m2mList.addAndRemove({ remove: [record.resId] });
+    await this.props.record.save();
+    this.state.viewKey++;
   }
 
   async onAdd() {
