@@ -1,11 +1,19 @@
 /** @odoo-module **/
 
-import { Component, xml } from "@odoo/owl";
+import { Component, useState, xml } from "@odoo/owl";
 import { View } from "@web/views/view";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
+import { useService } from "@web/core/utils/hooks";
+import { FormViewDialog } from "@web/views/view_dialogs/form_view_dialog";
+import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
 
 export class GroupedX2ManyField extends Component {
+  setup() {
+    this.dialog = useService("dialog");
+    this.state = useState({ viewKey: 0 });
+  }
+
   get record() {
     return this.props.record;
   }
@@ -28,6 +36,10 @@ export class GroupedX2ManyField extends Component {
       return [];
     }
     return Array.isArray(gb) ? gb : [gb];
+  }
+
+  get allowAdd() {
+    return !!(this.props.options && this.props.options.allow_add);
   }
 
   get domain() {
@@ -74,7 +86,32 @@ export class GroupedX2ManyField extends Component {
       domain: this.domain,
       context: this.viewContext,
       groupBy: this.groupBy,
+      allowSelectors: false,
+      selectRecord: (resId) => this.openRecordDialog(resId),
     };
+  }
+
+  openRecordDialog(resId) {
+    this.dialog.add(FormViewDialog, {
+      resModel: this.resModel,
+      resId,
+      onRecordSaved: () => {
+        this.state.viewKey++;
+      },
+    });
+  }
+
+  async onAdd() {
+    const m2mList = this.props.record.data[this.props.name];
+    const currentIds = m2mList.resIds || [];
+    this.dialog.add(SelectCreateDialog, {
+      resModel: this.resModel,
+      domain: [["id", "not in", currentIds]],
+      onSelected: async (resIds) => {
+        await m2mList.addAndRemove({ add: resIds });
+        this.state.viewKey++;
+      },
+    });
   }
 }
 
@@ -82,7 +119,12 @@ GroupedX2ManyField.template = xml`
   <div class="o_field_grouped_2many">
     <t t-if="record.resId">
       <t t-if="viewId">
-        <View t-props="viewProps"/>
+        <View t-key="state.viewKey" t-props="viewProps"/>
+        <t t-if="allowAdd">
+          <div class="o_field_x2many_list_row_add">
+            <a href="#" t-on-click.prevent="onAdd">Add a line</a>
+          </div>
+        </t>
       </t>
       <t t-else="">
         <div class="alert alert-warning m-2">
