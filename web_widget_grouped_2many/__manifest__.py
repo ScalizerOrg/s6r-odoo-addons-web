@@ -1,6 +1,6 @@
 {
     'name': 'Web Widget - Grouped X2Many',
-    'version': '19.0.1.0.0',
+    'version': '19.0.2.0.0',
     'summary': 'Display one2many/many2many fields as a grouped list view in form views',
     'category': 'Technical',
     'author': 'Scalizer',
@@ -10,6 +10,7 @@
     'assets': {
         'web.assets_backend': [
             'web_widget_grouped_2many/static/src/js/grouped_2many.js',
+            'web_widget_grouped_2many/static/src/xml/grouped_2many.xml',
             'web_widget_grouped_2many/static/src/scss/grouped_2many.scss',
         ],
     },

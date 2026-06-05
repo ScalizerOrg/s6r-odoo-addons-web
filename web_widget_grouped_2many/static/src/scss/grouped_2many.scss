@@ -1,7 +1,8 @@
-.o_field_grouped_2many {
-  .o_control_panel,
-  .o_searchview,
-  .o_search_panel {
-    display: none !important;
-  }
+// The grouped x2many widget reuses the standard list renderer markup, so the
+// native `.o_group_header` / `.o_group_name` styling already applies.
+// Make the group header clearly clickable for the fold/unfold interaction.
+.o_field_x2many {
+    .o_group_header {
+        cursor: pointer;
+    }
 }

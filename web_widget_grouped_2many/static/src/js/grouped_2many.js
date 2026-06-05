@@ -1,180 +1,209 @@
 /** @odoo-module **/
 
-import { Component, useState, xml } from "@odoo/owl";
-import { View } from "@web/views/view";
+import { X2ManyField, x2ManyField } from "@web/views/fields/x2many/x2many_field";
+import { ListRenderer } from "@web/views/list/list_renderer";
 import { registry } from "@web/core/registry";
-import { standardFieldProps } from "@web/views/fields/standard_field_props";
+import { useState } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
-import { FormViewDialog } from "@web/views/view_dialogs/form_view_dialog";
-import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
-import { patch } from "@web/core/utils/patch";
-import { ListController } from "@web/views/list/list_controller";
+import { _t } from "@web/core/l10n/translation";
 
-ListController.props.activeActions = { type: Object, optional: true };
+/**
+ * List renderer that displays the already-loaded x2many records grouped
+ * client-side by a single field, without any server ``read_group`` call.
+ *
+ * It only overrides the rows template: each line is still rendered through the
+ * standard ``recordRowTemplate``, so inline editing, widgets, optional fields
+ * and active actions behave exactly like the native x2many list.
+ */
+export class GroupedListRenderer extends ListRenderer {
+    static props = [...ListRenderer.props, "groupBy?", "groupOrder?"];
+    static rowsTemplate = "web_widget_grouped_2many.GroupedRows";
 
-patch(ListController.prototype, {
-  setup() {
-    super.setup();
-    if (this.props.activeActions) {
-      this.activeActions = { ...this.activeActions, ...this.props.activeActions };
-    }
-  },
-});
-
-export class GroupedX2ManyField extends Component {
-  setup() {
-    this.dialog = useService("dialog");
-    this.state = useState({ viewKey: 0 });
-  }
-
-  get record() {
-    return this.props.record;
-  }
-
-  get fieldDef() {
-    return this.record.fields[this.props.name];
-  }
-
-  get resModel() {
-    return this.fieldDef.relation;
-  }
-
-  get viewId() {
-    return (this.props.options && this.props.options.view_id) || false;
-  }
-
-  get groupBy() {
-    const gb = this.props.options && this.props.options.group_by;
-    if (!gb) {
-      return [];
-    }
-    return Array.isArray(gb) ? gb : [gb];
-  }
-
-  get allowAdd() {
-    return !!(this.props.options && this.props.options.allow_add);
-  }
-
-  get domain() {
-    if (!this.record.resId) {
-      return [["id", "=", 0]];
-    }
-    return [["id", "in", this.record.data[this.props.name].resIds]];
-  }
-
-  get viewContext() {
-    const recordCtx = this.record.getContext
-      ? this.record.getContext()
-      : this.props.context || {};
-    const fieldCtx = this.props.context || {};
-    const optCtx = (this.props.options && this.props.options.context) || {};
-
-    const ctx = {
-      ...recordCtx,
-      ...fieldCtx,
-      ...optCtx,
-      create: false,
-    };
-
-    if (this.groupBy.length) {
-      ctx.group_by = this.groupBy;
+    setup() {
+        super.setup();
+        // Client-side fold state, keyed by the group value. Folded by default = false.
+        this.folded = useState({});
+        this.orm = useService("orm");
+        // Cache of {group_id: order_value} fetched from the comodel, with a
+        // signature of the id-set it was built for (refetch guard).
+        this.groupOrder = useState({ map: {}, sig: "" });
+        this._fetchingSig = null;
     }
 
-    return ctx;
-  }
-
-  get viewProps() {
-    const views = [[this.viewId, "list"]];
-    const searchViewId =
-      (this.props.options && this.props.options.search_view_id) || null;
-
-    if (searchViewId) {
-      views.push([searchViewId, "search"]);
+    /**
+     * Name of the field used to group the records.
+     *
+     * :return: the group-by field name, or an empty string when not configured.
+     * :rtype: str
+     */
+    get groupByField() {
+        return this.props.groupBy || "";
     }
 
-    return {
-      type: "list",
-      resModel: this.resModel,
-      views,
-      domain: this.domain,
-      context: this.viewContext,
-      groupBy: this.groupBy,
-      allowSelectors: false,
-      selectRecord: (resId) => this.openRecordDialog(resId),
-      activeActions: {
-        type: "many2many",
-        unlink: true,
-        onDelete: (record) => this.onRemoveRecord(record),
-      },
-    };
-  }
+    /**
+     * Name of the comodel field used to order the groups (``group_order``
+     * option). Only relevant when the group-by field is a many2one.
+     *
+     * :return: the order field name, or an empty string when not configured.
+     * :rtype: str
+     */
+    get groupOrderField() {
+        return this.props.groupOrder || "";
+    }
 
-  openRecordDialog(resId) {
-    this.dialog.add(FormViewDialog, {
-      resModel: this.resModel,
-      resId,
-      onRecordSaved: () => {
-        this.state.viewKey++;
-      },
-    });
-  }
+    /**
+     * Comodel (relation) of the group-by field, when it is relational.
+     *
+     * :return: the comodel name, or a falsy value for non-relational fields.
+     * :rtype: str
+     */
+    get groupByRelation() {
+        const def = this.list.fields[this.groupByField];
+        return def && def.relation;
+    }
 
-  async onRemoveRecord(record) {
-    const m2mList = this.props.record.data[this.props.name];
-    await m2mList.addAndRemove({ remove: [record.resId] });
-    await this.props.record.save();
-    this.state.viewKey++;
-  }
+    /**
+     * Build the client-side groups from the records currently in the list.
+     *
+     * Each group exposes a stable ``key`` (used for folding and as ``t-key``),
+     * a human-readable ``name`` and the list of records it contains. Order of
+     * first appearance is preserved.
+     *
+     * :return: the ordered list of groups.
+     * :rtype: Array
+     */
+    get groupedList() {
+        const field = this.groupByField;
+        const grouped = {};
+        for (const record of this.list.records) {
+            const raw = field ? record.data[field] : false;
+            let key;
+            let name;
+            if (raw && typeof raw === "object" && "id" in raw) {
+                // many2one: { id, display_name }
+                key = raw.id;
+                name = raw.display_name || _t("None");
+            } else if (raw === false || raw === undefined || raw === "") {
+                key = false;
+                name = _t("None");
+            } else {
+                // selection / char / number / boolean ...
+                key = raw;
+                name = String(raw);
+            }
+            if (!grouped[key]) {
+                grouped[key] = { key, name, records: [] };
+            }
+            grouped[key].records.push(record);
+        }
+        const groups = Object.values(grouped);
 
-  async onAdd() {
-    const m2mList = this.props.record.data[this.props.name];
-    const currentIds = m2mList.resIds || [];
-    this.dialog.add(SelectCreateDialog, {
-      resModel: this.resModel,
-      domain: [["id", "not in", currentIds]],
-      onSelected: async (resIds) => {
-        await m2mList.addAndRemove({ add: resIds });
-        await this.props.record.save();
-        this.state.viewKey++;
-      },
-    });
-  }
+        if (this.groupOrderField && this.groupByRelation) {
+            this._ensureGroupOrder(groups);
+            const map = this.groupOrder.map;
+            const rank = (g) =>
+                g.key === false || !(g.key in map) ? Infinity : map[g.key];
+            return groups.slice().sort((a, b) => {
+                const va = rank(a);
+                const vb = rank(b);
+                if (va < vb) {
+                    return -1;
+                }
+                if (va > vb) {
+                    return 1;
+                }
+                return 0;
+            });
+        }
+
+        return groups;
+    }
+
+    /**
+     * Fetch (once per id-set) the ``group_order`` field on the comodel for the
+     * given groups and store it in :attr:`groupOrder`. Guarded so it triggers a
+     * single re-render and never loops.
+     *
+     * :param groups: the groups built by :meth:`groupedList`.
+     */
+    _ensureGroupOrder(groups) {
+        const ids = groups
+            .map((g) => g.key)
+            .filter((k) => typeof k === "number");
+        const sig = ids.join(",");
+        if (sig === this.groupOrder.sig || sig === this._fetchingSig) {
+            return;
+        }
+        this._fetchingSig = sig;
+        this.orm
+            .read(this.groupByRelation, ids, [this.groupOrderField])
+            .then((records) => {
+                const map = {};
+                for (const record of records) {
+                    map[record.id] = record[this.groupOrderField];
+                }
+                this.groupOrder.map = map;
+                this.groupOrder.sig = sig;
+                this._fetchingSig = null;
+            });
+    }
+
+    /**
+     * Toggle the folded state of a group.
+     *
+     * :param key: the group key as exposed by :meth:`groupedList`.
+     */
+    toggleGroup(key) {
+        this.folded[key] = !this.folded[key];
+    }
 }
 
-GroupedX2ManyField.template = xml`
-  <div class="o_field_grouped_2many">
-    <t t-if="record.resId">
-      <t t-if="viewId">
-        <View t-key="state.viewKey" t-props="viewProps"/>
-        <t t-if="allowAdd">
-          <div class="o_field_x2many_list_row_add">
-            <a href="#" t-on-click.prevent="onAdd">Add a line</a>
-          </div>
-        </t>
-      </t>
-      <t t-else="">
-        <div class="alert alert-warning m-2">
-          View not found (check view_id in options).
-        </div>
-      </t>
-    </t>
-    <t t-else="">
-      <div class="alert alert-info m-2">
-        Save the record first to display related records.
-      </div>
-    </t>
-  </div>
-`;
+/**
+ * X2many field that renders its list grouped client-side.
+ *
+ * It is a thin wrapper around the standard :class:`X2ManyField`: it only swaps
+ * the list renderer and forwards the ``group_by`` option to it. Everything else
+ * (command protocol, onchange propagation, atomic save, active actions) is
+ * inherited unchanged.
+ */
+export class GroupedX2ManyField extends X2ManyField {
+    static components = {
+        ...X2ManyField.components,
+        ListRenderer: GroupedListRenderer,
+    };
 
-GroupedX2ManyField.components = { View };
+    /**
+     * Forward the ``group_by`` option (carried by ``crudOptions``) to the
+     * renderer, on top of the standard renderer props.
+     *
+     * :return: the props passed to the list renderer.
+     * :rtype: Object
+     */
+    get rendererProps() {
+        const props = super.rendererProps;
+        const opts = this.props.crudOptions || {};
+        props.groupBy = opts.group_by;
+        props.groupOrder = opts.group_order;
+        return props;
+    }
+}
 
-GroupedX2ManyField.props = {
-  ...standardFieldProps,
-  options: { type: Object, optional: true },
+export const groupedX2ManyField = {
+    ...x2ManyField,
+    component: GroupedX2ManyField,
+    supportedOptions: [
+        ...(x2ManyField.supportedOptions || []),
+        {
+            label: _t("Group by"),
+            name: "group_by",
+            type: "string",
+        },
+        {
+            label: _t("Group order field"),
+            name: "group_order",
+            type: "string",
+        },
+    ],
 };
 
-registry.category("fields").add("grouped_2many", {
-  component: GroupedX2ManyField,
-  supportedTypes: ["one2many", "many2many"],
-  extractProps: ({ options }) => ({ options: options || {} }),
-});
+registry.category("fields").add("grouped_x2many", groupedX2ManyField);
