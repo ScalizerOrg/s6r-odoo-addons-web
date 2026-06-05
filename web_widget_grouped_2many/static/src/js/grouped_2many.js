@@ -109,6 +109,7 @@ export class GroupedX2ManyField extends Component {
       domain: [["id", "not in", currentIds]],
       onSelected: async (resIds) => {
         await m2mList.addAndRemove({ add: resIds });
+        await this.props.record.save();
         this.state.viewKey++;
       },
     });
