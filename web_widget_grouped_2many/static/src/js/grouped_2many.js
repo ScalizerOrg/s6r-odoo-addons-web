@@ -79,10 +79,10 @@ export class GroupedListRenderer extends ListRenderer {
             const raw = field ? record.data[field] : false;
             let key;
             let name;
-            if (raw && typeof raw === "object" && "id" in raw) {
-                // many2one: { id, display_name }
-                key = raw.id;
-                name = raw.display_name || _t("None");
+            if (Array.isArray(raw)) {
+                // many2one: [id, display_name]
+                key = raw[0];
+                name = raw[1] || _t("None");
             } else if (raw === false || raw === undefined || raw === "") {
                 key = false;
                 name = _t("None");

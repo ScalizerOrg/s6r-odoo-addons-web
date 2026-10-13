@@ -2,7 +2,7 @@
 # License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl-3.0.html).
 {
     "name": "Web Widget - Grouped X2Many",
-    "version": "19.0.2.0.0",
+    "version": "18.0.2.0.0",
     "author": "Scalizer",
     "website": "https://www.scalizer.fr",
     "summary": "Display one2many/many2many fields as a grouped list view in form views",
