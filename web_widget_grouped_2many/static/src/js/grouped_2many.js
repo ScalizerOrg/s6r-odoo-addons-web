@@ -191,6 +191,19 @@ export class GroupedX2ManyField extends X2ManyField {
 export const groupedX2ManyField = {
     ...x2ManyField,
     component: GroupedX2ManyField,
+    /**
+     * Add the group-by field to the subview, as a visible field, so that its
+     * ``display_name`` is part of the ``web_read`` specification even when the
+     * column is ``column_invisible`` (the invisible modifiers are AND-combined
+     * when merged). The ``type`` is only a placeholder: the comodel's real field
+     * definition takes precedence when the specification is built.
+     *
+     * :param fieldInfo: the parsed field node, carrying the widget options.
+     * :return: the fields to add to the subview.
+     * :rtype: Array
+     */
+    relatedFields: ({ options }) =>
+        options.group_by ? [{ name: options.group_by, type: "many2one" }] : [],
     supportedOptions: [
         ...(x2ManyField.supportedOptions || []),
         {
