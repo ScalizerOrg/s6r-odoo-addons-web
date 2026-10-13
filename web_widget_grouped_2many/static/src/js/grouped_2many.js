@@ -1,11 +1,31 @@
 /** @odoo-module **/
 
 import { X2ManyField, x2ManyField } from "@web/views/fields/x2many/x2many_field";
+import { FormController } from "@web/views/form/form_controller";
 import { ListRenderer } from "@web/views/list/list_renderer";
 import { registry } from "@web/core/registry";
-import { useState } from "@odoo/owl";
+import { useChildSubEnv, useState } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
+import { patch } from "@web/core/utils/patch";
+import { useSetupAction } from "@web/search/action_hook";
 import { _t } from "@web/core/l10n/translation";
+
+/**
+ * Keep the fold state of the grouped x2many lists in the form controller's
+ * local state, the same way the active notebook pages are kept, so that it is
+ * restored when coming back to the form (e.g. through the breadcrumbs after
+ * opening a row in its form view). It lives as long as the controller does.
+ */
+patch(FormController.prototype, {
+    setup() {
+        super.setup(...arguments);
+        const groupedX2ManyFolded = { ...this.props.state?.groupedX2ManyFolded };
+        useChildSubEnv({ groupedX2ManyFolded });
+        useSetupAction({
+            getLocalState: () => ({ groupedX2ManyFolded }),
+        });
+    },
+});
 
 /**
  * List renderer that displays the already-loaded x2many records grouped
@@ -16,13 +36,26 @@ import { _t } from "@web/core/l10n/translation";
  * and active actions behave exactly like the native x2many list.
  */
 export class GroupedListRenderer extends ListRenderer {
-    static props = [...ListRenderer.props, "groupBy?", "groupOrder?", "registerDisplayedResIds?"];
+    static props = [
+        ...ListRenderer.props,
+        "groupBy?",
+        "groupOrder?",
+        "foldKey?",
+        "registerDisplayedResIds?",
+    ];
     static rowsTemplate = "web_widget_grouped_2many.GroupedRows";
 
     setup() {
         super.setup();
         // Client-side fold state, keyed by the group value. Folded by default = false.
-        this.folded = useState({});
+        // Stored in the form controller's local state when there is one.
+        const store = this.env.groupedX2ManyFolded;
+        if (store && this.props.foldKey) {
+            store[this.props.foldKey] ||= {};
+            this.folded = useState(store[this.props.foldKey]);
+        } else {
+            this.folded = useState({});
+        }
         this.orm = useService("orm");
         // Cache of {group_id: order_value} fetched from the comodel, with a
         // signature of the id-set it was built for (refetch guard).
@@ -207,6 +240,7 @@ export class GroupedX2ManyField extends X2ManyField {
         const opts = this.props.crudOptions || {};
         props.groupBy = opts.group_by;
         props.groupOrder = opts.group_order;
+        props.foldKey = `${this.props.record.resModel},${this.props.name}`;
         props.registerDisplayedResIds = (getter) => {
             this.getDisplayedResIds = getter;
         };
