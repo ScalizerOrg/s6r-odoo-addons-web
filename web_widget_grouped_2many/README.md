@@ -37,3 +37,17 @@ option.
 - Grouping is client-side only: there are no per-group server aggregates and no
   lazy/paginated group loading. All relation records are grouped in the browser.
 - Groups can be collapsed/expanded by clicking the group header.
+
+## Authors
+
+* Scalizer
+
+## Contributors
+
+- Colin Chibois ([Github](https://github.com/superColson))
+
+## Maintainers
+
+This module is maintained by [Scalizer](https://www.scalizer.fr).
+
+![Scalizer](./static/description/logo.png)
