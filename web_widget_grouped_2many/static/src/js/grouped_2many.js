@@ -16,7 +16,7 @@ import { _t } from "@web/core/l10n/translation";
  * and active actions behave exactly like the native x2many list.
  */
 export class GroupedListRenderer extends ListRenderer {
-    static props = [...ListRenderer.props, "groupBy?", "groupOrder?"];
+    static props = [...ListRenderer.props, "groupBy?", "groupOrder?", "registerDisplayedResIds?"];
     static rowsTemplate = "web_widget_grouped_2many.GroupedRows";
 
     setup() {
@@ -28,6 +28,23 @@ export class GroupedListRenderer extends ListRenderer {
         // signature of the id-set it was built for (refetch guard).
         this.groupOrder = useState({ map: {}, sig: "" });
         this._fetchingSig = null;
+        if (this.props.registerDisplayedResIds) {
+            this.props.registerDisplayedResIds(() => this.displayedResIds);
+        }
+    }
+
+    /**
+     * Ids of the saved records, in the order they are displayed, skipping the
+     * records of folded groups.
+     *
+     * :return: the displayed record ids.
+     * :rtype: Array
+     */
+    get displayedResIds() {
+        return this.groupedList
+            .filter((group) => !this.folded[group.key])
+            .flatMap((group) => group.records.map((record) => record.resId))
+            .filter(Boolean);
     }
 
     /**
@@ -58,7 +75,7 @@ export class GroupedListRenderer extends ListRenderer {
      * :rtype: str
      */
     get groupByRelation() {
-        const def = this.list.fields[this.groupByField];
+        const def = this.props.list.fields[this.groupByField];
         return def && def.relation;
     }
 
@@ -75,7 +92,7 @@ export class GroupedListRenderer extends ListRenderer {
     get groupedList() {
         const field = this.groupByField;
         const grouped = {};
-        for (const record of this.list.records) {
+        for (const record of this.props.list.records) {
             const raw = field ? record.data[field] : false;
             let key;
             let name;
@@ -172,6 +189,12 @@ export class GroupedX2ManyField extends X2ManyField {
         ListRenderer: GroupedListRenderer,
     };
 
+    setup() {
+        super.setup();
+        // Replaced by the renderer's getter once it is set up.
+        this.getDisplayedResIds = () => this.list.resIds;
+    }
+
     /**
      * Forward the ``group_by`` option (carried by ``crudOptions``) to the
      * renderer, on top of the standard renderer props.
@@ -184,7 +207,32 @@ export class GroupedX2ManyField extends X2ManyField {
         const opts = this.props.crudOptions || {};
         props.groupBy = opts.group_by;
         props.groupOrder = opts.group_order;
+        props.registerDisplayedResIds = (getter) => {
+            this.getDisplayedResIds = getter;
+        };
         return props;
+    }
+
+    /**
+     * Same as the standard implementation, but the form view pager follows the
+     * displayed rows: grouped order, without the records of folded groups.
+     *
+     * :param record: the record to open.
+     */
+    async switchToForm(record) {
+        await this.props.record.save();
+        this.action.doAction(
+            {
+                type: "ir.actions.act_window",
+                views: [[false, "form"]],
+                res_id: record.resId,
+                res_model: this.list.resModel,
+                context: this.props.context,
+            },
+            {
+                props: { resIds: this.getDisplayedResIds() },
+            }
+        );
     }
 }
 
