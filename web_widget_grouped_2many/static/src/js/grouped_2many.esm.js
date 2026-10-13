@@ -1,14 +1,17 @@
-/** @odoo-module **/
+/*
+ * Copyright 2026 Scalizer (<https://www.scalizer.fr>)
+ * License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl-3.0.html).
+ */
 
 import { X2ManyField, x2ManyField } from "@web/views/fields/x2many/x2many_field";
+import { useChildSubEnv, useState } from "@odoo/owl";
 import { FormController } from "@web/views/form/form_controller";
 import { ListRenderer } from "@web/views/list/list_renderer";
-import { registry } from "@web/core/registry";
-import { useChildSubEnv, useState } from "@odoo/owl";
-import { useService } from "@web/core/utils/hooks";
-import { patch } from "@web/core/utils/patch";
-import { useSetupAction } from "@web/search/action_hook";
 import { _t } from "@web/core/l10n/translation";
+import { patch } from "@web/core/utils/patch";
+import { registry } from "@web/core/registry";
+import { useService } from "@web/core/utils/hooks";
+import { useSetupAction } from "@web/search/action_hook";
 
 /**
  * Keep the fold state of the grouped x2many lists in the form controller's
@@ -127,17 +130,14 @@ export class GroupedListRenderer extends ListRenderer {
         const grouped = {};
         for (const record of this.props.list.records) {
             const raw = field ? record.data[field] : false;
-            let key;
-            let name;
+            let key = false;
+            let name = _t("None");
             if (Array.isArray(raw)) {
-                // many2one: [id, display_name]
+                // Many2one: [id, display_name]
                 key = raw[0];
-                name = raw[1] || _t("None");
-            } else if (raw === false || raw === undefined || raw === "") {
-                key = false;
-                name = _t("None");
-            } else {
-                // selection / char / number / boolean ...
+                name = raw[1] || name;
+            } else if (raw !== false && raw !== undefined && raw !== "") {
+                // Selection / char / number / boolean ...
                 key = raw;
                 name = String(raw);
             }

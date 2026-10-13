@@ -17,7 +17,7 @@
     "data": [],
     "assets": {
         "web.assets_backend": [
-            "web_widget_grouped_2many/static/src/js/grouped_2many.js",
+            "web_widget_grouped_2many/static/src/js/grouped_2many.esm.js",
             "web_widget_grouped_2many/static/src/xml/grouped_2many.xml",
             "web_widget_grouped_2many/static/src/scss/grouped_2many.scss",
         ],
