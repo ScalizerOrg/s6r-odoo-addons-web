@@ -22,7 +22,7 @@ The asterisk disappears as soon as the field is filled in.
     ''',
     'assets': {
         'web.assets_backend': [
-            's6r_required_field_highlight/static/src/js/form_label.js',
+            's6r_required_field_highlight/static/src/js/form_label.esm.js',
             's6r_required_field_highlight/static/src/xml/form_label.xml',
         ],
     },

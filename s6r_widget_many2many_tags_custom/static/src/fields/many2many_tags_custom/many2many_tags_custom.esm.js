@@ -1,8 +1,6 @@
-/** @odoo-module **/
-
 import { Many2ManyTagsField, many2ManyTagsField } from "@web/views/fields/many2many_tags/many2many_tags_field";
-import { registry } from "@web/core/registry";
 import { _t } from "@web/core/l10n/translation";
+import { registry } from "@web/core/registry";
 
 export class Many2ManyTagsCustomField extends Many2ManyTagsField {
     static props = {
@@ -49,7 +47,7 @@ export const many2ManyTagsCustomField = {
 
         return relatedFields;
     },
-    extractProps({ attrs, options, string }, dynamicInfo) {
+    extractProps({ options }) {
         const props = many2ManyTagsField.extractProps(...arguments);
         props.displayField = options.display_field;
         return props;

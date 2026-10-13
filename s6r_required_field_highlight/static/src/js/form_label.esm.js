@@ -1,6 +1,6 @@
-import { patch } from "@web/core/utils/patch";
 import { FormLabel } from "@web/views/form/form_label";
 import { fieldVisualFeedback } from "@web/views/fields/field";
+import { patch } from "@web/core/utils/patch";
 
 patch(FormLabel.prototype, {
     get isRequired() {
