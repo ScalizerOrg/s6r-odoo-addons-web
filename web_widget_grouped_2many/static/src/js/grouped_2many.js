@@ -1,11 +1,33 @@
 /** @odoo-module **/
 
 import { X2ManyField, x2ManyField } from "@web/views/fields/x2many/x2many_field";
+import { FormController } from "@web/views/form/form_controller";
 import { ListRenderer } from "@web/views/list/list_renderer";
 import { registry } from "@web/core/registry";
-import { useState } from "@odoo/owl";
+import { useChildSubEnv, useState } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
+import { symmetricalDifference } from "@web/core/utils/arrays";
+import { x2ManyCommands } from "@web/core/orm_service";
+import { patch } from "@web/core/utils/patch";
+import { useSetupAction } from "@web/search/action_hook";
 import { _t } from "@web/core/l10n/translation";
+
+/**
+ * Keep the fold state of the grouped x2many lists in the form controller's
+ * local state, the same way the active notebook pages are kept, so that it is
+ * restored when coming back to the form (e.g. through the breadcrumbs after
+ * opening a row in its form view). It lives as long as the controller does.
+ */
+patch(FormController.prototype, {
+    setup() {
+        super.setup(...arguments);
+        const groupedX2ManyFolded = { ...this.props.state?.groupedX2ManyFolded };
+        useChildSubEnv({ groupedX2ManyFolded });
+        useSetupAction({
+            getLocalState: () => ({ groupedX2ManyFolded }),
+        });
+    },
+});
 
 /**
  * List renderer that displays the already-loaded x2many records grouped
@@ -16,18 +38,48 @@ import { _t } from "@web/core/l10n/translation";
  * and active actions behave exactly like the native x2many list.
  */
 export class GroupedListRenderer extends ListRenderer {
-    static props = [...ListRenderer.props, "groupBy?", "groupOrder?"];
+    static props = [
+        ...ListRenderer.props,
+        "groupBy?",
+        "groupOrder?",
+        "foldKey?",
+        "registerDisplayedResIds?",
+    ];
     static rowsTemplate = "web_widget_grouped_2many.GroupedRows";
 
     setup() {
         super.setup();
         // Client-side fold state, keyed by the group value. Folded by default = false.
-        this.folded = useState({});
+        // Stored in the form controller's local state when there is one.
+        const store = this.env.groupedX2ManyFolded;
+        if (store && this.props.foldKey) {
+            store[this.props.foldKey] ||= {};
+            this.folded = useState(store[this.props.foldKey]);
+        } else {
+            this.folded = useState({});
+        }
         this.orm = useService("orm");
         // Cache of {group_id: order_value} fetched from the comodel, with a
         // signature of the id-set it was built for (refetch guard).
         this.groupOrder = useState({ map: {}, sig: "" });
         this._fetchingSig = null;
+        if (this.props.registerDisplayedResIds) {
+            this.props.registerDisplayedResIds(() => this.displayedResIds);
+        }
+    }
+
+    /**
+     * Ids of the saved records, in the order they are displayed, skipping the
+     * records of folded groups.
+     *
+     * :return: the displayed record ids.
+     * :rtype: Array
+     */
+    get displayedResIds() {
+        return this.groupedList
+            .filter((group) => !this.folded[group.key])
+            .flatMap((group) => group.records.map((record) => record.resId))
+            .filter(Boolean);
     }
 
     /**
@@ -58,7 +110,7 @@ export class GroupedListRenderer extends ListRenderer {
      * :rtype: str
      */
     get groupByRelation() {
-        const def = this.list.fields[this.groupByField];
+        const def = this.props.list.fields[this.groupByField];
         return def && def.relation;
     }
 
@@ -75,7 +127,7 @@ export class GroupedListRenderer extends ListRenderer {
     get groupedList() {
         const field = this.groupByField;
         const grouped = {};
-        for (const record of this.list.records) {
+        for (const record of this.props.list.records) {
             const raw = field ? record.data[field] : false;
             let key;
             let name;
@@ -172,6 +224,12 @@ export class GroupedX2ManyField extends X2ManyField {
         ListRenderer: GroupedListRenderer,
     };
 
+    setup() {
+        super.setup();
+        // Replaced by the renderer's getter once it is set up.
+        this.getDisplayedResIds = () => this.list.resIds;
+    }
+
     /**
      * Forward the ``group_by`` option (carried by ``crudOptions``) to the
      * renderer, on top of the standard renderer props.
@@ -184,13 +242,87 @@ export class GroupedX2ManyField extends X2ManyField {
         const opts = this.props.crudOptions || {};
         props.groupBy = opts.group_by;
         props.groupOrder = opts.group_order;
+        props.foldKey = `${this.props.record.resModel},${this.props.name}`;
+        props.registerDisplayedResIds = (getter) => {
+            this.getDisplayedResIds = getter;
+        };
         return props;
+    }
+
+    /**
+     * Same as the standard implementation, but the form view pager follows the
+     * displayed rows: grouped order, without the records of folded groups.
+     *
+     * :param record: the record to open.
+     * :param options: the opening options (``newWindow``).
+     */
+    async switchToForm(record, options) {
+        let resId = null;
+        if (record.isNew) {
+            // In the case of a new record, you don't have access to the id from the start, to get it we need to:
+            // - Finds the record's index using its _virtualId.
+            // - Saves the record and compares resIds before and after to detect new records.
+            // - If the record was created, it determines its final resId by matching the index.
+            // - Opens the form view for the correct record.
+            const createCommands = this.list._commands.filter(
+                ([command]) => command === x2ManyCommands.CREATE
+            );
+            const newRecordIndex = createCommands.findIndex(
+                ([_command, virtualId]) => virtualId === record._virtualId
+            );
+            const previousResIds = this.list.resIds;
+            const saved = await this.props.record.save();
+            if (!saved) {
+                return;
+            }
+            const newResIds = symmetricalDifference(this.list.resIds, previousResIds);
+            if (newResIds.length !== createCommands.length) {
+                return this.notificationService.add(_t("Please save your changes first"), {
+                    type: "danger",
+                });
+            }
+            newResIds.sort((x, y) => x - y);
+            resId = newResIds[newRecordIndex];
+        } else {
+            const saved = await this.props.record.save();
+            if (!saved) {
+                return;
+            }
+            resId = record.resId;
+        }
+
+        this.action.doAction(
+            {
+                type: "ir.actions.act_window",
+                views: [[false, "form"]],
+                res_id: resId,
+                res_model: this.list.resModel,
+                context: this.getFormActionContext(),
+            },
+            {
+                props: { resIds: this.getDisplayedResIds() },
+                newWindow: options.newWindow,
+            }
+        );
     }
 }
 
 export const groupedX2ManyField = {
     ...x2ManyField,
     component: GroupedX2ManyField,
+    /**
+     * Add the group-by field to the subview, as a visible field, so that its
+     * ``display_name`` is part of the ``web_read`` specification even when the
+     * column is ``column_invisible`` (the invisible modifiers are AND-combined
+     * when merged). The ``type`` is only a placeholder: the comodel's real field
+     * definition takes precedence when the specification is built.
+     *
+     * :param fieldInfo: the parsed field node, carrying the widget options.
+     * :return: the fields to add to the subview.
+     * :rtype: Array
+     */
+    relatedFields: ({ options }) =>
+        options.group_by ? [{ name: options.group_by, type: "many2one" }] : [],
     supportedOptions: [
         ...(x2ManyField.supportedOptions || []),
         {
