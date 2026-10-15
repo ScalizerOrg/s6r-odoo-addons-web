@@ -1,3 +1,7 @@
-_commit: 94ced17
-_src_path: git@github.com:ScalizerOrg/s6r-odoo-addons-template.git
-odoo_version: 16.0
+# Do NOT update manually; changes here will be overwritten by Copier
+_commit: v2.1
+_src_path: git@github.com:ScalizerOrg/odoo-docker.git
+formatting: check
+odoo_version: 18.0
+project_type: addons
+use_ruff: true

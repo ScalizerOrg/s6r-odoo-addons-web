@@ -26,7 +26,7 @@ Usage:
     ],
     'assets': {
         'web.assets_backend': [
-            's6r_widget_many2many_tags_custom/static/src/fields/many2many_tags_custom/many2many_tags_custom.js',
+            's6r_widget_many2many_tags_custom/static/src/fields/many2many_tags_custom/many2many_tags_custom.esm.js',
             's6r_widget_many2many_tags_custom/static/src/fields/many2many_tags_custom/many2many_tags_custom.xml',
         ],
     },
